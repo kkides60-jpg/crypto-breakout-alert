@@ -116,9 +116,9 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
     # Supertrend
     hl2 = (df["high"] + df["low"]) / 2
-    upper_b = (hl2 + 3.0 * df["atr"]).to_numpy()
-    lower_b = (hl2 - 3.0 * df["atr"]).to_numpy()
-    close_arr = df["close"].to_numpy()
+    upper_b = (hl2 + 3.0 * df["atr"]).to_numpy(copy=True)
+    lower_b = (hl2 - 3.0 * df["atr"]).to_numpy(copy=True)
+    close_arr = df["close"].to_numpy(copy=True)
     direction = np.ones(len(df))
     for i in range(1, len(df)):
         if close_arr[i - 1] <= upper_b[i - 1]:
