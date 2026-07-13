@@ -1,0 +1,52 @@
+name: Crypto Breakout Scanner
+
+on:
+  schedule:
+    # Runs every 15 minutes, 24/7, forever - free for public GitHub repos.
+    # Change the cron expression if you want a different frequency.
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}   # lets you also trigger it manually from the Actions tab
+
+# Needed so the workflow can commit the updated seen_alerts.json back to the repo
+permissions:
+  contents: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run scanner
+        env:
+          TIMEFRAME: ${{ vars.TIMEFRAME || '1h' }}
+          QUOTE_CURRENCY: ${{ vars.QUOTE_CURRENCY || 'USDT' }}
+          TOP_N_COINS: ${{ vars.TOP_N_COINS || '60' }}
+          RVOL_THRESHOLD: ${{ vars.RVOL_THRESHOLD || '2.0' }}
+          RSI_THRESHOLD: ${{ vars.RSI_THRESHOLD || '60.0' }}
+          ADX_THRESHOLD: ${{ vars.ADX_THRESHOLD || '25.0' }}
+          EXTENSION_THRESHOLD: ${{ vars.EXTENSION_THRESHOLD || '0.10' }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERT_TO_EMAIL: ${{ secrets.ALERT_TO_EMAIL }}
+          FCM_PROJECT_ID: ${{ secrets.FCM_PROJECT_ID }}
+          FCM_SERVICE_ACCOUNT_JSON: ${{ secrets.FCM_SERVICE_ACCOUNT_JSON }}
+          FCM_DEVICE_TOKEN: ${{ secrets.FCM_DEVICE_TOKEN }}
+        run: python scanner.py
+
+      - name: Save alert-history file back to the repo
+        run: |
+          git config user.name "breakout-scanner-bot"
+          git config user.email "actions@github.com"
+          git add seen_alerts.json
+          git diff --cached --quiet || git commit -m "Update seen alerts [skip ci]"
+          git push
