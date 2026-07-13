@@ -1,0 +1,14 @@
+{
+  "name": "Breakout Alert",
+  "short_name": "Breakout",
+  "description": "Real-time crypto structural breakout alerts",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0B1220",
+  "theme_color": "#1B365D",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

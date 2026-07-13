@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Breakout Alert</title>
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icon-192.png" />
+<meta name="theme-color" content="#1B365D" />
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    background: #0B1220;
+    color: #E8EEF7;
+    min-height: 100vh;
+  }
+  header {
+    padding: 24px 20px 16px;
+    background: #1B365D;
+  }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; color: #9FB3CC; font-size: 13px; }
+  main { padding: 20px; max-width: 480px; margin: 0 auto; }
+  .card {
+    background: #131C2E;
+    border: 1px solid #223047;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .status { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #E74C3C; }
+  .dot.on { background: #2ECC71; }
+  button {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    background: #2ECC71;
+    color: #04140A;
+    font-weight: 600;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  button:disabled { background: #3A4A61; color: #8FA0B8; }
+  .token-box {
+    background: #0B1220;
+    border: 1px dashed #3A4A61;
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 11px;
+    word-break: break-all;
+    color: #9FB3CC;
+    margin-top: 10px;
+    max-height: 90px;
+    overflow-y: auto;
+  }
+  .alert-item {
+    border-bottom: 1px solid #223047;
+    padding: 10px 0;
+    font-size: 14px;
+  }
+  .alert-item:last-child { border-bottom: none; }
+  .alert-item .sym { font-weight: 700; color: #2ECC71; }
+  .alert-item .meta { color: #9FB3CC; font-size: 12px; margin-top: 2px; }
+  .empty { color: #6B7C93; font-size: 13px; text-align: center; padding: 20px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📈 Breakout Alert</h1>
+  <p>Live crypto structural breakout notifications</p>
+</header>
+
+<main>
+  <div class="card">
+    <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">Notifications not enabled</span></div>
+    <div style="margin-top:12px;">
+      <button id="enableBtn">Enable Notifications</button>
+    </div>
+    <div id="tokenBox" class="token-box" style="display:none;"></div>
+    <p style="font-size:12px;color:#6B7C93;margin-top:10px;">
+      Copy the token above once and paste it into your GitHub repo as the
+      <code>FCM_DEVICE_TOKEN</code> secret. You only need to do this once.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;font-size:15px;">Recent Alerts</h3>
+    <div id="alertsList"><div class="empty">No alerts received yet.</div></div>
+  </div>
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+<script>
+  // ⚠️ Replace with YOUR OWN Firebase project config - same values as in
+  // firebase-messaging-sw.js. Safe to be public, this is not a secret key.
+  const firebaseConfig = {
+    apiKey: "REPLACE_ME",
+    authDomain: "REPLACE_ME.firebaseapp.com",
+    projectId: "REPLACE_ME",
+    storageBucket: "REPLACE_ME.appspot.com",
+    messagingSenderId: "REPLACE_ME",
+    appId: "REPLACE_ME"
+  };
+  // ⚠️ Replace with your Web Push "VAPID key" from
+  // Firebase Console -> Project Settings -> Cloud Messaging -> Web configuration
+  const VAPID_KEY = "REPLACE_ME";
+
+  firebase.initializeApp(firebaseConfig);
+  const messaging = firebase.messaging();
+
+  const statusDot = document.getElementById("statusDot");
+  const statusText = document.getElementById("statusText");
+  const tokenBox = document.getElementById("tokenBox");
+  const enableBtn = document.getElementById("enableBtn");
+  const alertsList = document.getElementById("alertsList");
+
+  function loadAlerts() {
+    const alerts = JSON.parse(localStorage.getItem("alerts") || "[]");
+    if (alerts.length === 0) return;
+    alertsList.innerHTML = alerts
+      .slice()
+      .reverse()
+      .map(a => `
+        <div class="alert-item">
+          <div class="sym">${a.symbol}</div>
+          <div class="meta">Close ${a.close} · RSI ${a.rsi} · RVOL ${a.rvol} · ${new Date(a.time).toLocaleString()}</div>
+        </div>`)
+      .join("");
+  }
+
+  function saveAlert(data) {
+    const alerts = JSON.parse(localStorage.getItem("alerts") || "[]");
+    alerts.push(data);
+    localStorage.setItem("alerts", JSON.stringify(alerts.slice(-100)));
+    loadAlerts();
+  }
+
+  async function enableNotifications() {
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        statusText.textContent = "Permission denied";
+        return;
+      }
+      const registration = await navigator.serviceWorker.register("firebase-messaging-sw.js");
+      const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: registration });
+
+      statusDot.classList.add("on");
+      statusText.textContent = "Notifications enabled";
+      tokenBox.style.display = "block";
+      tokenBox.textContent = token;
+      enableBtn.disabled = true;
+      enableBtn.textContent = "Enabled";
+
+      localStorage.setItem("fcm_token", token);
+    } catch (err) {
+      statusText.textContent = "Error: " + err.message;
+    }
+  }
+
+  enableBtn.addEventListener("click", enableNotifications);
+
+  // Foreground messages (app open) - also store them in history
+  messaging.onMessage((payload) => {
+    if (payload.data) saveAlert(payload.data);
+  });
+
+  // Restore state on load
+  window.addEventListener("load", () => {
+    const savedToken = localStorage.getItem("fcm_token");
+    if (savedToken) {
+      statusDot.classList.add("on");
+      statusText.textContent = "Notifications enabled";
+      tokenBox.style.display = "block";
+      tokenBox.textContent = savedToken;
+      enableBtn.disabled = true;
+      enableBtn.textContent = "Enabled";
+    }
+    loadAlerts();
+  });
+</script>
+
+</body>
+</html>
