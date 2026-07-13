@@ -36,7 +36,15 @@ logger = logging.getLogger("breakout_scanner")
 # =========================================================================
 TIMEFRAME          = os.getenv("TIMEFRAME", "1h")          # e.g. "15m", "1h", "4h"
 QUOTE_CURRENCY     = os.getenv("QUOTE_CURRENCY", "USDT")
-EXCHANGE_ID        = os.getenv("EXCHANGE_ID", "bybit")      # Binance blocks GitHub Actions' IPs (451 error) - Bybit/OKX don't
+
+# EXCHANGE_ID is now optional. If set, only that exchange is used.
+# If NOT set, the scanner tries a priority list of exchanges in order and
+# uses the first one that actually responds from the runner's IP.
+# This fixes the "CloudFront blocks your country" / 451 / geo-block issue
+# without changing any strategy logic - it's purely a connection fallback.
+EXCHANGE_ID         = os.getenv("EXCHANGE_ID", "")          # leave blank to auto-fallback
+EXCHANGE_FALLBACK_LIST = ["okx", "kucoin", "gateio", "bybit", "mexc"]
+
 TOP_N_COINS        = int(os.getenv("TOP_N_COINS", "60"))    # scan top N pairs by volume
 CANDLE_LIMIT       = int(os.getenv("CANDLE_LIMIT", "300"))
 
@@ -178,8 +186,46 @@ def detect_breakout(df: pd.DataFrame) -> bool:
 
 
 # =========================================================================
-# 3. MARKET DATA
+# 3. MARKET DATA / EXCHANGE CONNECTION
 # =========================================================================
+def build_exchange() -> ccxt.Exchange:
+    """
+    Connects to a working exchange from the current runner's IP.
+
+    Why this exists: some exchanges (Bybit, Binance) block requests from
+    certain cloud/datacenter IP ranges via CloudFront/WAF rules (403/451
+    errors), and GitHub Actions runner IPs rotate and can land in a
+    blocked range on any given run. This tries a priority list of
+    exchanges and uses the first one that actually responds, so the
+    scanner keeps working regardless of which country/IP the runner
+    happens to get. No strategy logic is touched - this only affects
+    where OHLCV candles come from.
+    """
+    candidates = [EXCHANGE_ID] if EXCHANGE_ID else EXCHANGE_FALLBACK_LIST
+
+    last_error = None
+    for ex_id in candidates:
+        if not ex_id:
+            continue
+        try:
+            exchange_class = getattr(ccxt, ex_id)
+            exchange = exchange_class({"enableRateLimit": True})
+            # cheap connectivity check - forces a real request now instead
+            # of failing later mid-scan
+            exchange.load_markets()
+            logger.info(f"Connected successfully to exchange: {ex_id}")
+            return exchange
+        except Exception as e:
+            logger.warning(f"Exchange '{ex_id}' unavailable from this runner ({e}). Trying next...")
+            last_error = e
+            continue
+
+    raise RuntimeError(
+        f"No exchange in the fallback list was reachable from this runner. "
+        f"Last error: {last_error}"
+    )
+
+
 def get_top_symbols(exchange: ccxt.Exchange, n: int) -> list:
     markets = exchange.load_markets()
     tickers = exchange.fetch_tickers()
@@ -295,8 +341,7 @@ def save_seen_alerts(seen: dict) -> None:
 # 6. MAIN SCAN
 # =========================================================================
 def run_scan() -> None:
-    exchange_class = getattr(ccxt, EXCHANGE_ID)
-    exchange = exchange_class({"enableRateLimit": True})
+    exchange = build_exchange()
     seen = load_seen_alerts()
 
     symbols = get_top_symbols(exchange, TOP_N_COINS)
