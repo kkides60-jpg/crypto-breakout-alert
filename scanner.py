@@ -1,8 +1,8 @@
 """
 Crypto Structural Breakout Scanner
 ==================================
-Scans USDT pairs on Binance for real, calculable structural breakout
-setups (trend + momentum + volume + price-action + volatility expansion),
+Scans USDT pairs for real, calculable structural breakout setups
+(trend + momentum + volume + price-action + volatility expansion),
 then sends an alert two ways:
   1. Email  -> via Gmail SMTP (App Password)
   2. Phone app -> via Firebase Cloud Messaging push notification
@@ -36,6 +36,7 @@ logger = logging.getLogger("breakout_scanner")
 # =========================================================================
 TIMEFRAME          = os.getenv("TIMEFRAME", "1h")          # e.g. "15m", "1h", "4h"
 QUOTE_CURRENCY     = os.getenv("QUOTE_CURRENCY", "USDT")
+EXCHANGE_ID        = os.getenv("EXCHANGE_ID", "bybit")      # Binance blocks GitHub Actions' IPs (451 error) - Bybit/OKX don't
 TOP_N_COINS        = int(os.getenv("TOP_N_COINS", "60"))    # scan top N pairs by volume
 CANDLE_LIMIT       = int(os.getenv("CANDLE_LIMIT", "300"))
 
@@ -177,7 +178,7 @@ def detect_breakout(df: pd.DataFrame) -> bool:
 
 
 # =========================================================================
-# 3. MARKET DATA (Binance public data - no API key needed to read prices)
+# 3. MARKET DATA
 # =========================================================================
 def get_top_symbols(exchange: ccxt.Exchange, n: int) -> list:
     markets = exchange.load_markets()
@@ -294,7 +295,8 @@ def save_seen_alerts(seen: dict) -> None:
 # 6. MAIN SCAN
 # =========================================================================
 def run_scan() -> None:
-    exchange = ccxt.binance({"enableRateLimit": True})
+    exchange_class = getattr(ccxt, EXCHANGE_ID)
+    exchange = exchange_class({"enableRateLimit": True})
     seen = load_seen_alerts()
 
     symbols = get_top_symbols(exchange, TOP_N_COINS)
